@@ -6,29 +6,28 @@ export default class UsersController {
   static async postNew(req, res) {
     const email = req.body ? req.body.email : null;
     if (!email) {
-      res.status(400).json({ error: 'Missing email' }).end();
-      return;
+      return res.status(400).json({ error: 'Missing email' }).end();
     }
     const password = req.body ? req.body.password : null;
     if (!password) {
-      res.status(400).json({ error: 'Missing password' }).end();
-      return;
+      return res.status(400).json({ error: 'Missing password' });
     }
     const usersCollection = await dbClient.usersCollection();
     const user = await usersCollection.findOne({ email });
     if (user) {
-      res.status(400).json({ error: 'Already exist' }).end();
-      return;
+      return res.status(400).json({ error: 'Already exist' });
     }
     const newUser = await usersCollection
       .insertOne({ email, password: sha1(password) });
 
-    res.status(201).json({ email, id: newUser.insertedId.toString() });
+    return res.status(201).json({
+      email, id: newUser.insertedId.toString(),
+    });
   }
 
   static getMe(req, res) {
-    const { user } = req;
+    const { _id: id, email } = req.user;
 
-    res.status(200).json({ email: user.email, id: user._id.toString() });
+    return res.status(200).json({ id, email });
   }
 }

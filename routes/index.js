@@ -14,4 +14,6 @@ export default (app) => {
   app.get('/disconnect', AuthController.getDisonnect);
 
   app.post('/files', FilesController.postUpload);
+  app.get('/files', FilesController.getIndex);
+  app.get('/files/:id', FilesController.getShow);
 };

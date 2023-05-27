@@ -2,3 +2,4 @@ node_modules
 main.js
 pnpm-lock.yaml
 redis.sh
+files_manager_venv

@@ -1,6 +1,17 @@
 import sha1 from 'sha1';
+import { ObjectId } from 'mongodb';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
+
+const [pathAuth, pathXToken] = [
+  ['/connect'],
+  [
+    '/users/me',
+    '/disconnect',
+    '/files',
+    '/files/',
+  ],
+];
 
 /**
  * Fetches the user detail from the database using Authorization in the request
@@ -22,11 +33,10 @@ async function getUserAuth(auth) {
  * @returns Promise<_id: ObjectId, email: string, password: string> || null
  */
 async function getUserXToken(token) {
-  const userId = await redisClient.get(`auth_${token}`);
+  const userId = new ObjectId(await redisClient.get(`auth_${token}`));
   if (!userId) return null;
-  const user = await (await dbClient.usersCollection())
-    .findById(userId);
-  return [user, token] || [null, null];
+  const user = await dbClient.getById('users', userId);
+  return user || null;
 }
 
 /**
@@ -38,15 +48,21 @@ async function getUserXToken(token) {
  */
 export default async function Authenticate(req, res, next) {
   let user = null;
-  const [auth, token] = [req.headers.authorization, req.headers['x-token']];
-  if (auth || token) {
-    if (auth) user = await getUserAuth(auth.split(' '));
-    else if (token) user = await getUserXToken(token);
+  const [auth, xtoken] = [req.headers.authorization, req.headers['x-token']];
+  const { path } = req;
+
+  if ((pathAuth.includes(path) && !auth) || (pathXToken.includes(path) && !xtoken)) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  if (auth || xtoken) {
+    user = auth ? await getUserAuth(auth.split(' ')) : await getUserXToken(xtoken);
     if (!user) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
-    [req.user, req.token] = [user, token];
+    [req.user, req.xtoken] = [user, xtoken];
   }
+
   next();
 }

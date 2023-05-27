@@ -3,6 +3,7 @@ import routes from './routes';
 import middlewares from './middlewares';
 
 const app = express();
+
 app.use(express.json());
 const port = 5000;
 

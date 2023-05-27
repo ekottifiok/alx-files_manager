@@ -1,4 +1,4 @@
-import mongodb from 'mongodb';
+import mongodb, { ObjectId } from 'mongodb';
 import { existsSync, readFileSync } from 'fs';
 
 
@@ -70,6 +70,40 @@ class DBClient {
    */
   async filesCollection() {
     return this.client.db().collection('files');
+  }
+
+  async getById(collection, id) {
+    const _id = new ObjectId(id);
+    let user = null;
+    switch (collection) {
+      case 'files':
+        user = await (await this.filesCollection()).findOne({ _id });
+        break;
+
+      case 'users':
+        user = await (await this.usersCollection()).findOne({ _id });
+        break;
+      default:
+        break;
+    }
+
+    return user || null;
+  }
+
+  async get(collection, data) {
+    let [files, users] = [null, null];
+
+    switch (collection) {
+      case 'files':
+        files = await (await this.filesCollection()).find(data).toArray();
+        break;
+      case 'users':
+        users = await (await this.usersCollection()).find(data).toArray();
+        break;
+      default:
+        break;
+    }
+    return files || users || null;
   }
 }
 
