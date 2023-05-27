@@ -2,15 +2,17 @@ import { existsSync, mkdir, writeFile } from 'fs';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
 import { join } from 'path';
+import { contentType } from 'mime-types';
+import { ObjectID } from 'mongodb';
 
 import dbClient from '../utils/db';
-import { renameObjectProperty, renameListObjectProperty} from '../utils/misc';
+import { getListFromObject, renameObjectProperty, renameListObjectProperty } from '../utils/misc';
 
 const typeOptions = ['file', 'folder', 'image'];
 const mkDirAsync = promisify(mkdir);
 const writeFileAsync = promisify(writeFile);
 const parentPath = process.env.FOLDERPATH || '/tmp/files_manager';
-
+const maxFilesPage = 10;
 
 export default class FilesController {
   static async postUpload(req, res) {
@@ -96,7 +98,14 @@ export default class FilesController {
 
   static async getIndex(req, res) {
     const userId = req.user._id.toString();
-    const files = await dbClient.get('files', { userId });
+    const { query } = req;
+    const page = Number.parseInt(query.page, 0);
+    const getParameters = {
+      ...{ userId }, ...getListFromObject(['name', 'type', 'parentId'], query),
+    };
+
+    const files = await (await (await dbClient.filesCollection())
+      .find(getParameters)).skip(page * maxFilesPage).limit(maxFilesPage).toArray();
     if (!files) return res.status(404).json({ error: 'Not Found' });
     return res.status(200).json(renameListObjectProperty(files, '_id', 'id'));
   }
@@ -107,5 +116,40 @@ export default class FilesController {
     if (!file) return res.status(404).json({ error: 'Not Found' });
     file = renameObjectProperty(file, '_id', 'id');
     return file ? res.status(200).json(file) : res.status(404).json({ error: 'Not found' });
+  }
+
+  static async putPublish(req, res) {
+    const { id } = req.params;
+    const file = await dbClient.getById('files', id);
+    if (!file) return res.status(404).json({ error: 'Not found' });
+    file.isPublic = true;
+    await (await dbClient.filesCollection())
+      .updateOne({ _id: new ObjectID(id) }, { $set: { isPublic: true } });
+    return res.status(200).json(renameObjectProperty(file, '_id', 'id'));
+  }
+
+  static async putUnpublish(req, res) {
+    const { id } = req.params;
+    const file = await dbClient.getById('files', id);
+    if (!file) return res.status(404).json({ error: 'Not found' });
+    file.isPublic = false;
+    console.log(new ObjectID(id));
+    await (await dbClient.filesCollection())
+      .updateOne({ _id: new ObjectID(id)}, { $set: { isPublic: false } });
+    return res.status(200).json(renameObjectProperty(file, '_id', 'id'));
+  }
+
+  static async getFile(req, res) {
+    const { id } = req.params;
+    const file = await dbClient.getById('files', id);
+    if (!file || !file.isPublic) return res.status(404).json({ error: 'Not found' });
+    if (file.type === 'folder') return res.status(404).json({ error: 'A folder doesn\'t have content' });
+    const absoluteFilePath = join(file.localPath, file.name);
+    console.log(absoluteFilePath);
+    if (!existsSync(absoluteFilePath)) return res.status(404).json({ error: 'Not found' });
+
+    return res.status(200).sendFile(absoluteFilePath).set({
+      'Content-Type': contentType(file.name) || 'text/plain; charset=utf-8',
+    });
   }
 }

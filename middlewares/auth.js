@@ -9,7 +9,9 @@ const [pathAuth, pathXToken] = [
     '/users/me',
     '/disconnect',
     '/files',
-    '/files/',
+    '/files/:id',
+    '/files/:id/publish',
+    '/files/:id/unpublish',
   ],
 ];
 
