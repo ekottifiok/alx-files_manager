@@ -2,7 +2,7 @@ import base64
 import requests
 import sys
 
-token = 'd1b18da2-42b3-4834-ae7c-f76e12beda0b'
+token = '66217eb8-6f44-4b02-97be-2c978f7fb0b0'
 file_path = 'imags'
 name = 'images.jpg'
 file_name = '/home/ifiokekott/alx-files_manager/image.jpg'

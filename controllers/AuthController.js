@@ -1,9 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import redisClient from '../utils/redis';
 
-
 export default class AuthController {
-  static async getConnect(req, res) {
+  static async getConnect (req, res) {
     const { user } = req;
     const token = uuidv4();
     // set the token to the user and expires for 24 hours
@@ -11,7 +10,7 @@ export default class AuthController {
     return res.status(200).json({ token });
   }
 
-  static async getDisonnect(req, res) {
+  static async getDisonnect (req, res) {
     await redisClient.del(`auth_${req.xtoken}`);
     return res.status(204).send();
   }

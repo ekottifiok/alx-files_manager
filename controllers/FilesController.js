@@ -1,18 +1,24 @@
-import { existsSync, mkdir, writeFile } from 'fs';
-import { promisify } from 'util';
+import {
+  existsSync, mkdirSync, promises as fs,
+} from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { join } from 'path';
 import { contentType } from 'mime-types';
 import { ObjectID } from 'mongodb';
+import Queue from 'bull/lib/queue';
 
 import dbClient from '../utils/db';
-import { getListFromObject, renameObjectProperty, renameListObjectProperty } from '../utils/misc';
+import {
+  renameObjectProperty, renameListObjectProperty, removeUndefined, getListFromObjectValues,
+} from '../utils/misc';
 
 const typeOptions = ['file', 'folder', 'image'];
-const mkDirAsync = promisify(mkdir);
-const writeFileAsync = promisify(writeFile);
+
 const parentPath = process.env.FOLDERPATH || '/tmp/files_manager';
 const maxFilesPage = 10;
+const imageSizes = ['500', '250', '100'];
+const fileQueue = new Queue('generate thumbnails');
+
 
 export default class FilesController {
   static async postUpload(req, res) {
@@ -33,7 +39,7 @@ export default class FilesController {
     if (!data && fileObj.type !== 'folder') {
       return res.status(400).json({ error: 'Missing data' });
     }
-    if (!existsSync(parentPath)) await mkDirAsync(parentPath);
+    if (!existsSync(parentPath)) await fs.mkdir(parentPath);
     const filesCollection = await dbClient.filesCollection();
 
     switch (fileObj.type) {
@@ -43,18 +49,16 @@ export default class FilesController {
           const folderPath = join(parentPath, fileObj.name);
           const folderArr = await dbClient.get('files', { name: fileObj.name, type: 'folder' });
           const folder = folderArr[0];
-          if (folder) return res.status(400).json({ error: 'Folder already exists' });
-          if (!folder || !existsSync(folderPath)) await mkDirAsync(folderPath);
+          if (folder || existsSync(folderPath)) return res.status(400).json({ error: 'Folder already exists' });
+          await fs.mkdir(folderPath);
         }
         break;
       case 'file':
       case 'image':
 
-        fileObj.localPath = join(parentPath, uuidv4());
-
         // check if the user sends a parent location
         {
-          let absoluteFilePath = join(parentPath, fileObj.name);
+          let absoluteFilePath = null;
           if (fileObj.parentId !== 0) {
             const absoluteParentPath = join(parentPath, fileObj.parentId);
             absoluteFilePath = join(absoluteParentPath, fileObj.name);
@@ -78,11 +82,15 @@ export default class FilesController {
             if (existsSync(absoluteFilePath)) {
               return res.status(400).json({ error: 'File already exists' });
             }
+          } else {
+            fileObj.localPath = join(parentPath, uuidv4());
+            absoluteFilePath = join(fileObj.localPath, fileObj.name);
+            if (!existsSync(fileObj.localPath)) await mkdirSync(fileObj.localPath);
           }
 
           // stores the file
-          await writeFileAsync(
-            join(absoluteFilePath),
+          await fs.writeFile(
+            absoluteFilePath,
             Buffer.from(data, 'base64'),
           );
         }
@@ -92,16 +100,28 @@ export default class FilesController {
         break;
     }
 
-    await filesCollection.insertOne(fileObj);
+    const fileSaved = await filesCollection.insertOne(fileObj);
+    const fileId = fileSaved.insertedId.toString();
+    const { userId } = fileObj;
+    if (fileObj.type === 'image') {
+      fileQueue.add({
+        fileId,
+        userId,
+        name: `Image Thumbnail for ${userId} ${fileId}`,
+      });
+    }
+
     return res.status(201).json(renameObjectProperty(fileObj, '_id', 'id'));
   }
 
   static async getIndex(req, res) {
     const userId = req.user._id.toString();
-    const { query } = req;
-    const page = Number.parseInt(query.page, 0);
+    const {
+      name, type, parentId, qPage,
+    } = req.query;
+    const page = Number.parseInt(qPage, 0);
     const getParameters = {
-      ...{ userId }, ...getListFromObject(['name', 'type', 'parentId'], query),
+      ...{ userId }, ...removeUndefined({ name, type, parentId }),
     };
 
     const files = await (await (await dbClient.filesCollection())
@@ -135,21 +155,23 @@ export default class FilesController {
     file.isPublic = false;
     console.log(new ObjectID(id));
     await (await dbClient.filesCollection())
-      .updateOne({ _id: new ObjectID(id)}, { $set: { isPublic: false } });
+      .updateOne({ _id: new ObjectID(id) }, { $set: { isPublic: false } });
     return res.status(200).json(renameObjectProperty(file, '_id', 'id'));
   }
 
   static async getFile(req, res) {
     const { id } = req.params;
+    const { size } = req.query;
     const file = await dbClient.getById('files', id);
     if (!file || !file.isPublic) return res.status(404).json({ error: 'Not found' });
     if (file.type === 'folder') return res.status(404).json({ error: 'A folder doesn\'t have content' });
-    const absoluteFilePath = join(file.localPath, file.name);
-    console.log(absoluteFilePath);
+
+    const absoluteFilePath = join(file.localPath, `${file.name}${imageSizes.includes(size) && `_${size}`}`);
+
     if (!existsSync(absoluteFilePath)) return res.status(404).json({ error: 'Not found' });
 
-    return res.status(200).sendFile(absoluteFilePath).set({
+    return res.status(200).set({
       'Content-Type': contentType(file.name) || 'text/plain; charset=utf-8',
-    });
+    }).sendFile(absoluteFilePath);
   }
 }

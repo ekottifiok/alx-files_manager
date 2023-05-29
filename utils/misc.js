@@ -1,17 +1,35 @@
+import { list } from 'mongodb/lib/gridfs/grid_store';
+
+/* eslint-disable no-param-reassign */
 export function renameObjectProperty(object, oldProp, newProp) {
   Object.defineProperty(
     object, newProp,
     Object.getOwnPropertyDescriptor(object, oldProp),
   );
-  // eslint-disable-next-line no-param-reassign
   delete object[oldProp];
   return object;
 }
 
 export function getListFromObject(list, object) {
-  // eslint-disable-next-line no-param-reassign
-  Object.keys(object).forEach((key) => (list.includes(key) ? null : delete object[key]));
+  Object.keys(object).forEach((key) => {
+    if (list.includes(key)) {
+      if (!object[key]) delete object[key];
+    } else {
+      delete object[key];
+    }
+  });
   return object;
+}
+
+export function getListFromObjectValues(valueList, object) {
+  const values = [];
+  Object.values(object).forEach((item) => valueList.includes(item) && values.push(item));
+  return values;
+}
+
+export function removeUndefined(obj) {
+  Object.keys(obj).map((key) => (!obj[key] ? delete obj[key] : null));
+  return obj;
 }
 
 export function renameListObjectProperty(listObject, oldProp, newProp) {
